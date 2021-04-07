@@ -1,5 +1,7 @@
 # Introduction
 # http://peopleanalytics-regression-book.org/index.html
+# Git resource: https://happygitwithr.com/existing-github-first.html
+
 
 # install peopleanalyticsdata package
 install.packages("peopleanalyticsdata")
@@ -647,8 +649,120 @@ summary(iid_intercept_model,
 
 
 # Structural Equation Models ----
-# https://github.com/armacintosh/Regression_Notes_Examples.git
+# http://peopleanalytics-regression-book.org/modeling-explicit-and-latent-hierarchy-in-data.html#struc-eq-model
 
+# a technique that allows an analyst to hypothesize a smaller set of latent variables or factors that explain the responses to the survey items themselves (the ‘measured variables’), and then regresses the outcome of interest against these latent factors.
+# has 2 parts:
+  # 1. Measurement model (Factor analysis): This is focused on how well the hypothesized factors explain the responses to the survey items using a technique called factor analysis.
+  # 2. Structural model: effectively a regression model which explains how each of the proposed factors relate to the outcome of interest.
+      # e.g. determine how each factor relates to the overall
+
+# if needed, get data
+url <- "http://peopleanalytics-regression-book.org/data/politics_survey.csv"
+politics_survey <- read.csv(url)
+head(politics_survey)
+
+
+# sample path diagram of Factor analysis
+# ```{r semplot, fig.cap = if (knitr::is_latex_output()) {"Simple path diagram showing proposed measurement model for \\texttt{politics\\_survey}"} else {"Simple path diagram showing proposed measurement model for `politics_survey`"}, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, out.width = if (knitr::is_latex_output()) {"90%"}}
+# library(lavaan)
+# library(semPlot)
+# measurement_model <- "
+# # measurement model
+# Pol =~ Pol1 + Pol2 + Pol3
+# Hab =~ Hab1 + Hab2 + Hab3
+# Loc =~ Loc1 + Loc2 + Loc3
+# Env =~ Env1 + Env2
+# Int =~ Int1 + Int2
+# Pers =~ Pers1 + Pers2 + Pers3
+# Nat =~ Nat1 + Nat2 + Nat3
+# Eco =~ Eco1 + Eco2
+# "
+# cfa_model <- lavaan::cfa(model = measurement_model, data = politics_survey)
+# semPlot::semPaths(cfa_model, style = "lisrel", residuals = FALSE, nCharNodes = 0)
+# ```
+
+
+# Measurement modeL: CFA 
+# define measurement model
+
+meas_mod <- "
+# measurement model
+Pol =~ Pol1 + Pol2 + Pol3
+Hab =~ Hab1 + Hab2 + Hab3
+Loc =~ Loc1 + Loc2 + Loc3
+Env =~ Env1 + Env2
+Int =~ Int1 + Int2
+Pers =~ Pers1 + Pers2 + Pers3
+Nat =~ Nat1 + Nat2 + Nat3
+Eco =~ Eco1 + Eco2
+"
+
+library(lavaan)
+
+cfa_meas_mod <- lavaan::cfa(model = meas_mod, data = politics_survey)
+lavaan::summary(cfa_meas_mod, fit.measures = TRUE, standardized = TRUE)
+
+# interpret: 
+  # warning to look out for relates to the covariance matrix being non-positive definite. This renders some of the attempted measurement invalid and is usually caused by too small a sample size for the complexity of the measurement model.
+  # fit statistics.
+      # CFI and TLI, which compare the proposed model to a baseline (null or random) model to determine if it is better. Ideally we look for both of these measures to exceed 0.95. We see that our measurement model comes very close to meeting these criteria.
+      # RMSEA should ideally be less than 0.06, which is met by our measurement model.
+      # SRMR should ideally be less than 0.08, which is met by our measurement model.
+  #  parameter estimates for the latent variables 
+      # Std.all column which is similar to standardized regression coefficients. These parameters are commonly knows as factor loadings—they can be interpreted as the extent to which the item response is explained by the proposed latent variable. In general, factor loadings of 0.7 or above are considered reasonable.
+
+# In our case we could consider dropping Pol3, Loc1, Pers1 and Nat3 from the measurement model as they have factor loadings of less than 0.7 and are in factors that contain three items. We will fit this revised measurement model
+meas_mod_revised <- "
+# measurement model
+Pol =~ Pol1 + Pol2
+Hab =~ Hab1 + Hab2 + Hab3
+Loc =~ Loc2 + Loc3
+Env =~ Env1 + Env2
+Int =~ Int1 + Int2
+Pers =~ Pers2 + Pers3
+Nat =~ Nat1 + Nat2
+Eco =~ Eco1 + Eco2
+"
+
+cfa_meas_mod_rev <- lavaan::cfa(model = meas_mod_revised, 
+                                data = politics_survey)
+fits <- lavaan::fitmeasures(cfa_meas_mod_rev)
+fits[c("cfi", "tli", "rmsea", "srmr")]
+
+
+# structural model
+# define full SEM using revised measurement model
+full_sem <- "
+# measurement model
+Pol =~ Pol1 + Pol2
+Hab =~ Hab1 + Hab2 + Hab3
+Loc =~ Loc2 + Loc3
+Env =~ Env1 + Env2
+Int =~ Int1 + Int2
+Pers =~ Pers2 + Pers3
+Nat =~ Nat1 + Nat2
+Eco =~ Eco1 + Eco2
+
+# structural model
+Overall ~ Pol + Hab + Loc + Env + Int + Pers + Nat + Eco
+"
+
+# run full SEM 
+full_model <- lavaan::sem(model = full_sem, data = politics_survey)
+lavaan::summary(full_model, standardized = TRUE)
+
+# interpret
+  # The Std.all column of the Regressions section of the output provides the fundamentals of the structural model—these are standardized estimates which can be approximately interpreted as the proportion of the variance of the outcome that is explained by each factor
+  # 
+    # Policies, habit and interest in local issues represent the three strongest drivers of likelihood of voting for the party at the next election, and explain approximately 70% of the overall variance in the outcome.
+    # Interest in national or international issues, and interest in the economy each have no significant relationship with likelihood to vote for the party at the next election.
+    # Interest in the environment has a significant negative relationship with likelihood to vote for the party at the next election.
+
+# path diagram
+# ```{r fullsemplot, fig.cap = if (knitr::is_latex_output()) {"Path diagram for full structural equation model on \\texttt{politics\\_survey}"} else {"Path diagram for full structural equation model on `politics_survey`"}, fig.align = "center", message = FALSE, echo = FALSE, warning = FALSE, out.width = if (knitr::is_latex_output()) {"90%"}}
+semPlot::semPaths(full_model, whatLabels = "std", residuals = FALSE, nCharNodes = 0)
+# ```
 
 
 
